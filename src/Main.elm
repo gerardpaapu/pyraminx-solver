@@ -63,6 +63,7 @@ type alias Stats =
     , pruned : Int
     , complete : Bool
     , depth : Int
+    , tableSize : Int
     }
 
 
@@ -73,6 +74,7 @@ initStats =
     , pruned = 0
     , complete = False
     , depth = 0
+    , tableSize = 0
     }
 
 
@@ -119,6 +121,9 @@ step stats search =
                               }
                             , xs
                             )
+
+                        TableEntry ->
+                            ( { stats | tableSize = stats.tableSize + 1 }, xs )
 
 
 
@@ -253,29 +258,6 @@ colorToString color =
             "grey"
 
 
-min3 x y z =
-    Basics.min x y |> Basics.min z
-
-
-max3 x y z =
-    Basics.max x y |> Basics.max z
-
-
-find : (a -> Maybe b) -> List a -> Maybe b
-find f ls =
-    case ls of
-        x :: xs ->
-            case f x of
-                Nothing ->
-                    find f xs
-
-                Just result ->
-                    Just result
-
-        _ ->
-            Nothing
-
-
 type Twist
     = Up
     | UpN
@@ -288,37 +270,37 @@ type Twist
 
 
 apply1 twist =
-    case twist of
-        Up ->
-            twist_ ( 5, 10, 13 ) ( 3, 12, 14 ) ( 6, 8, 15 )
+    let
+        twist_ ( a, b, c ) ( d, e, f ) ( g, h, i ) state =
+            state
+                |> cycle a b c
+                |> cycle d e f
+                |> cycle g h i
+    in
+        case twist of
+            Up ->
+                twist_ ( 5, 10, 13 ) ( 3, 12, 14 ) ( 6, 8, 15 )
 
-        UpN ->
-            twist_ ( 5, 13, 10 ) ( 3, 14, 12 ) ( 6, 15, 8 )
+            UpN ->
+                twist_ ( 5, 13, 10 ) ( 3, 14, 12 ) ( 6, 15, 8 )
 
-        Right ->
-            twist_ ( 17, 11, 21 ) ( 15, 9, 19 ) ( 18, 12, 23 )
+            Right ->
+                twist_ ( 17, 11, 21 ) ( 15, 9, 19 ) ( 18, 12, 23 )
 
-        RightN ->
-            twist_ ( 17, 21, 11 ) ( 15, 19, 9 ) ( 18, 23, 12 )
+            RightN ->
+                twist_ ( 17, 21, 11 ) ( 15, 19, 9 ) ( 18, 23, 12 )
 
-        Left ->
-            twist_ ( 4, 16, 20 ) ( 2, 14, 19 ) ( 6, 18, 22 )
+            Left ->
+                twist_ ( 4, 16, 20 ) ( 2, 14, 19 ) ( 6, 18, 22 )
 
-        LeftN ->
-            twist_ ( 4, 20, 16 ) ( 2, 19, 14 ) ( 6, 22, 18 )
+            LeftN ->
+                twist_ ( 4, 20, 16 ) ( 2, 19, 14 ) ( 6, 22, 18 )
 
-        Back ->
-            twist_ ( 1, 7, 24 ) ( 3, 9, 22 ) ( 2, 8, 23 )
+            Back ->
+                twist_ ( 1, 7, 24 ) ( 3, 9, 22 ) ( 2, 8, 23 )
 
-        BackN ->
-            twist_ ( 1, 24, 7 ) ( 3, 22, 9 ) ( 2, 23, 8 )
-
-
-twist_ ( a, b, c ) ( d, e, f ) ( g, h, i ) state =
-    state
-        |> cycle a b c
-        |> cycle d e f
-        |> cycle g h i
+            BackN ->
+                twist_ ( 1, 24, 7 ) ( 3, 22, 9 ) ( 2, 23, 8 )
 
 
 cycle : Int -> Int -> Int -> PuzzleState -> PuzzleState
@@ -360,6 +342,7 @@ apply script state =
 type SearchState
     = Solution PuzzleState Script
     | MisMatch PuzzleState Script
+    | TableEntry
     | Prune
 
 
@@ -399,16 +382,32 @@ search start goal =
                 _ ->
                     dict
 
-        table : Dict.Dict String Int
-        table =
+        data =
             searchLL (twoColor goal) (twoColor goal) never 5
-                |> LazyList.foldl add Dict.empty
 
-        bestCase ps =
+        -- |> LazyList.foldl add Dict.empty
+        bestCase table ps =
             Dict.get (toString <| twoColor ps) table
                 |> withDefault 0
+
+        scanl table ls =
+            case force ls of
+                Nil ->
+                    searchLL start goal (bestCase table) 12
+
+                Cons x xs ->
+                    case x of
+                        MisMatch _ _ ->
+                            let
+                                table_ =
+                                    add table x
+                            in
+                                LazyList.cons TableEntry (scanl table_ xs)
+
+                        _ ->
+                            scanl table xs
     in
-        searchLL start goal bestCase 12
+        scanl Dict.empty data
 
 
 searchLL : PuzzleState -> PuzzleState -> (PuzzleState -> Int) -> Int -> LazyList SearchState
@@ -454,6 +453,12 @@ faces state =
         triangle : Color -> Int -> ( Float, Float ) -> ( Float, Float ) -> ( Float, Float ) -> Html Msg
         triangle color idx ( x1, y1 ) ( x2, y2 ) ( x3, y3 ) =
             let
+                min3 x y z =
+                    Basics.min x y |> Basics.min z
+
+                max3 x y z =
+                    Basics.max x y |> Basics.max z
+
                 minX =
                     min3 x1 x2 x3
 
@@ -608,7 +613,7 @@ viewStats_ model =
 viewStats : Stats -> Html msg
 viewStats stats =
     let
-        { solution, state, pruned, examined, complete, depth } =
+        { solution, state, pruned, examined, complete, depth, tableSize } =
             stats
     in
         div []
@@ -616,4 +621,5 @@ viewStats stats =
             , p [] [ text <| "Exhausted: " ++ (toString complete) ]
             , p [] [ text <| "Examined " ++ (toString examined) ]
             , p [] [ text <| "Pruned: " ++ (toString pruned) ]
+            , p [] [ text <| "Tablesize: " ++ (toString tableSize) ]
             ]

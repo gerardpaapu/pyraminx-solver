@@ -105,3 +105,8 @@ foldl f acc (LazyList ls) =
 
         Cons x xs ->
             foldl f (f acc x) xs
+
+
+cons : a -> LazyList a -> LazyList a
+cons a ls =
+    LazyList (\() -> Cons a ls)
